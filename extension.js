@@ -4,8 +4,6 @@
 const vscode = require('vscode');
 const { exec } = require('child_process');
 const path = require('path');
-
-// Ruta a bash — ajústala si tu Git está en otra ubicación
 const fs = require('fs');
 
 function findBash() {
@@ -65,10 +63,13 @@ function activate(context) {
       });
       if (!branch) return;
 
+      // Usa la última rama base guardada como valor por defecto, o "dev" si es la primera vez
+      const savedBase = context.workspaceState.get('branchReview.lastBase', 'dev');
+
       const baseBranch = await vscode.window.showInputBox({
         prompt: '¿Contra qué rama se va a hacer la PR? (rama base)',
-        value: 'dev',
-        valueSelection: [0, 3] // deja "dev" seleccionado para sobrescribir fácil si quieren otra
+        value: savedBase,
+        valueSelection: [0, savedBase.length]
       });
       if (!baseBranch) return; // canceló, no continúa el flujo
 
@@ -80,7 +81,10 @@ function activate(context) {
         await run(`git switch -c review/${branch}`, cwd);
         await run(`git merge --no-commit --no-ff origin/${branch}`, cwd);
 
-        lastBaseBranch = baseBranch;
+
+        // Persiste la rama base para esta carpeta/proyecto
+        await context.workspaceState.update('branchReview.lastBase', baseBranch);
+        
         vscode.window.showInformationMessage(`✅ Rama review/${branch} lista para revisar (base: ${baseBranch}).`);
       } catch (e) {
         vscode.window.showErrorMessage(`Error: ${e}`);
@@ -96,10 +100,19 @@ function activate(context) {
           vscode.window.showWarningMessage('No estás en una rama review/*.');
           return;
         }
+
+        const baseBranch = context.workspaceState.get('branchReview.lastBase', 'dev');
+        if (!baseBranch) {
+          vscode.window.showWarningMessage(
+            'No hay una rama base registrada para este proyecto. Ejecuta primero "Start review".'
+          );
+          return;
+        }
+
         await run(`git merge --abort || true`, cwd);
-        await run(`git switch ${lastBaseBranch}`, cwd);
+        await run(`git switch ${baseBranch}`, cwd);
         await run(`git branch -D ${current}`, cwd);
-        vscode.window.showInformationMessage(`🧹 ${current} eliminada, de vuelta en ${lastBaseBranch}.`);
+        vscode.window.showInformationMessage(`🧹 ${current} eliminada, de vuelta en ${baseBranch}.`);
       } catch (e) {
         vscode.window.showErrorMessage(`Error: ${e}`);
       }

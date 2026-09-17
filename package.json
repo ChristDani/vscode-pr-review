@@ -2,7 +2,7 @@
   "name": "vscode-pr-review",
   "displayName": "vscode-pr-review",
   "description": "Personal extension for pr reviewers",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "repository": {"url": "https://github.com/ChristDani/vscode-pr-review.git"},
   "engines": {
     "vscode": "^1.138.0"
