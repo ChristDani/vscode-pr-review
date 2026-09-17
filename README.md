@@ -1,4 +1,4 @@
-# branch-review-buttons
+# vscode-pr-review
 
 Adds convenient buttons to Visual Studio Code for reviewing and managing Git branches directly from the Source Control view.
 

@@ -5,12 +5,25 @@ const vscode = require('vscode');
 const { exec } = require('child_process');
 const path = require('path');
 
+// Ruta a bash — ajústala si tu Git está en otra ubicación
+const fs = require('fs');
+
+function findBash() {
+  const candidates = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe'
+  ];
+  return candidates.find(p => fs.existsSync(p)) || 'bash'; // fallback: bash del PATH
+}
+
+const BASH_PATH = findBash();
+
 function run(cmd, cwd) {
   return new Promise((resolve, reject) => {
-	exec(cmd, { cwd, shell: '/bin/bash' }, (err, stdout, stderr) => {
-	  if (err) reject(stderr || err.message);
-	  else resolve(stdout);
-	});
+    exec(cmd, { cwd, shell: BASH_PATH }, (err, stdout, stderr) => {
+      if (err) reject(stderr || err.message);
+      else resolve(stdout);
+    });
   });
 }
 
@@ -21,65 +34,77 @@ function run(cmd, cwd) {
  * @param {vscode.ExtensionContext} context
  */
 
+// Guardamos la rama base usada en la última revisión, para que cleanup sepa a dónde volver
+let lastBaseBranch = 'dev';
+
 function activate(context) {
 
 	const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
 	// Botón: iniciar revisión
 	const reviewBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-	reviewBtn.text = '$(git-branch) Review rama';
-	reviewBtn.command = 'branch-review-buttons.start';
+	reviewBtn.text = '$(git-branch) Start review';
+	reviewBtn.command = 'vscode-pr-review-buttons.start';
 	reviewBtn.tooltip = 'Crear rama temporal de revisión';
 	reviewBtn.show();
 	context.subscriptions.push(reviewBtn);
 
 	// Botón: limpiar revisión
 	const cleanupBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-	cleanupBtn.text = '$(trash) Cleanup review';
-	cleanupBtn.command = 'branch-review-buttons.cleanup';
+	cleanupBtn.text = '$(trash) Finish review';
+	cleanupBtn.command = 'vscode-pr-review-buttons.cleanup';
 	cleanupBtn.tooltip = 'Descartar merge y eliminar rama temporal';
 	cleanupBtn.show();
-  	context.subscriptions.push(cleanupBtn);
+	context.subscriptions.push(cleanupBtn);
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('branch-review-buttons.start', async () => {
-			const branch = await vscode.window.showInputBox({
-				prompt: 'Nombre de la rama a revisar',
-				placeHolder: 'feature/nueva-funcionalidad'
-			});
-			if (!branch) return;
+    vscode.commands.registerCommand('vscode-pr-review-buttons.start', async () => {
+      const branch = await vscode.window.showInputBox({
+        prompt: 'Nombre de la rama a revisar',
+        placeHolder: 'feature/nueva-funcionalidad'
+      });
+      if (!branch) return;
 
-			try {
-				vscode.window.setStatusBarMessage('$(sync~spin) Preparando revisión...', 3000);
-				await run(`git switch dev`, cwd);
-				await run(`git pull --ff-only origin dev`, cwd);
-				await run(`git fetch origin ${branch}`, cwd);
-				await run(`git switch -c review/${branch}`, cwd);
-				await run(`git merge --no-commit --no-ff origin/${branch}`, cwd);
-				vscode.window.showInformationMessage(`✅ Rama review/${branch} lista para revisar.`);
-			} catch (e) {
-				vscode.window.showErrorMessage(`Error: ${e}`);
-			}
-    	})
-  	);
+      const baseBranch = await vscode.window.showInputBox({
+        prompt: '¿Contra qué rama se va a hacer la PR? (rama base)',
+        value: 'dev',
+        valueSelection: [0, 3] // deja "dev" seleccionado para sobrescribir fácil si quieren otra
+      });
+      if (!baseBranch) return; // canceló, no continúa el flujo
+
+      try {
+        vscode.window.setStatusBarMessage('$(sync~spin) Preparando revisión...', 3000);
+        await run(`git switch ${baseBranch}`, cwd);
+        await run(`git pull --ff-only origin ${baseBranch}`, cwd);
+        await run(`git fetch origin ${branch}`, cwd);
+        await run(`git switch -c review/${branch}`, cwd);
+        await run(`git merge --no-commit --no-ff origin/${branch}`, cwd);
+
+        lastBaseBranch = baseBranch;
+        vscode.window.showInformationMessage(`✅ Rama review/${branch} lista para revisar (base: ${baseBranch}).`);
+      } catch (e) {
+        vscode.window.showErrorMessage(`Error: ${e}`);
+      }
+    })
+  );
 
 	context.subscriptions.push(
-		vscode.commands.registerCommand('branch-review-buttons.cleanup', async () => {
-			try {
-				const current = (await run(`git branch --show-current`, cwd)).trim();
-				if (!current.startsWith('review/')) {
-				vscode.window.showWarningMessage('No estás en una rama review/*.');
-				return;
-				}
-				await run(`git merge --abort || true`, cwd);
-				await run(`git switch dev`, cwd);
-				await run(`git branch -D ${current}`, cwd);
-				vscode.window.showInformationMessage(`🧹 ${current} eliminada.`);
-			} catch (e) {
-				vscode.window.showErrorMessage(`Error: ${e}`);
-			}
-		})
-	);
+    vscode.commands.registerCommand('vscode-pr-review-buttons.cleanup', async () => {
+      try {
+        const current = (await run(`git branch --show-current`, cwd)).trim();
+        if (!current.startsWith('review/')) {
+          vscode.window.showWarningMessage('No estás en una rama review/*.');
+          return;
+        }
+        await run(`git merge --abort || true`, cwd);
+        await run(`git switch ${lastBaseBranch}`, cwd);
+        await run(`git branch -D ${current}`, cwd);
+        vscode.window.showInformationMessage(`🧹 ${current} eliminada, de vuelta en ${lastBaseBranch}.`);
+      } catch (e) {
+        vscode.window.showErrorMessage(`Error: ${e}`);
+      }
+    })
+  );
 }
 
 // This method is called when your extension is deactivated
