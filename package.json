@@ -1,6 +1,6 @@
 {
-  "name": "vscode-pr-review",
-  "displayName": "vscode-pr-review",
+  "name": "vscode-buttons-pr-review",
+  "displayName": "vscode-buttons-pr-review",
   "description": "VS Code extension that simplifies and automates Pull Request reviews using temporary Git branches, non-committed merges, testing, and automatic cleanup.",
   "version": "0.0.2",
   "publisher": "christiandiaz",
