@@ -1,15 +1,25 @@
 {
   "name": "vscode-pr-review",
   "displayName": "vscode-pr-review",
-  "description": "Personal extension for pr reviewers",
+  "description": "VS Code extension that simplifies and automates Pull Request reviews using temporary Git branches, non-committed merges, testing, and automatic cleanup.",
   "version": "0.0.2",
-  "repository": {"url": "https://github.com/ChristDani/vscode-pr-review.git"},
+  "publisher": "christiandiaz",
+  "author": {
+    "name": "Christian Daniel Campaña Díaz"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChristDani/vscode-pr-review.git"
+  },
+  "license": "MIT",
+  "icon": "extico.png",
   "engines": {
     "vscode": "^1.138.0"
   },
   "categories": [
     "Other"
   ],
+  "keywords": ["git", "branch", "review", "pr", "pull request", "vscode", "extension", "review buttons", "git review", "git pr review", "Christian Daniel Campaña Díaz", "ChristDani", "EYTLYR"],
   "activationEvents": ["onStartupFinished"],
   "main": "./extension.js",
   "contributes": {

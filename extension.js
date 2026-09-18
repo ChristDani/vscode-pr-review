@@ -1,6 +1,4 @@
 // @ts-nocheck
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 const vscode = require('vscode');
 const { exec } = require('child_process');
 const path = require('path');
@@ -25,18 +23,11 @@ function run(cmd, cwd) {
   });
 }
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-
 /**
  * @param {vscode.ExtensionContext} context
  */
 
-// Guardamos la rama base usada en la última revisión, para que cleanup sepa a dónde volver
-let lastBaseBranch = 'dev';
-
 function activate(context) {
-
 	const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
 	// Botón: iniciar revisión
@@ -47,7 +38,7 @@ function activate(context) {
 	reviewBtn.show();
 	context.subscriptions.push(reviewBtn);
 
-	// Botón: limpiar revisión
+	// Botón: finalizar revisión
 	const cleanupBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
 	cleanupBtn.text = '$(trash) Finish review';
 	cleanupBtn.command = 'vscode-pr-review-buttons.cleanup';
@@ -63,28 +54,43 @@ function activate(context) {
       });
       if (!branch) return;
 
-      // Usa la última rama base guardada como valor por defecto, o "dev" si es la primera vez
       const savedBase = context.workspaceState.get('branchReview.lastBase', 'dev');
-
       const baseBranch = await vscode.window.showInputBox({
         prompt: '¿Contra qué rama se va a hacer la PR? (rama base)',
         value: savedBase,
         valueSelection: [0, savedBase.length]
       });
-      if (!baseBranch) return; // canceló, no continúa el flujo
+      if (!baseBranch) return;
 
       try {
         vscode.window.setStatusBarMessage('$(sync~spin) Preparando revisión...', 3000);
-        await run(`git switch ${baseBranch}`, cwd);
-        await run(`git pull --ff-only origin ${baseBranch}`, cwd);
-        await run(`git fetch origin ${branch}`, cwd);
-        await run(`git switch -c review/${branch}`, cwd);
-        await run(`git merge --no-commit --no-ff origin/${branch}`, cwd);
+        await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Revisando ${branch}`,
+          cancellable: false
+        },
+        async (progress) => {
+          progress.report({ increment: 0, message: `Cambiando a ${baseBranch}...` });
+          await run(`git switch ${baseBranch}`, cwd);
 
+          progress.report({ increment: 20, message: `Actualizando ${baseBranch}...` });
+          await run(`git pull --ff-only origin ${baseBranch}`, cwd);
 
-        // Persiste la rama base para esta carpeta/proyecto
+          progress.report({ increment: 20, message: `Descargando ${branch}...` });
+          await run(`git fetch origin ${branch}`, cwd);
+
+          progress.report({ increment: 20, message: `Creando review/${branch}...` });
+          await run(`git switch -c review/${branch}`, cwd);
+
+          progress.report({ increment: 20, message: `Fusionando cambios...` });
+          await run(`git merge --no-commit --no-ff origin/${branch}`, cwd);
+
+          progress.report({ increment: 20, message: `Listo` });
+        }
+      );
+
         await context.workspaceState.update('branchReview.lastBase', baseBranch);
-        
         vscode.window.showInformationMessage(`✅ Rama review/${branch} lista para revisar (base: ${baseBranch}).`);
       } catch (e) {
         vscode.window.showErrorMessage(`Error: ${e}`);
@@ -101,7 +107,7 @@ function activate(context) {
           return;
         }
 
-        const baseBranch = context.workspaceState.get('branchReview.lastBase', 'dev');
+        const baseBranch = context.workspaceState.get('branchReview.lastBase');
         if (!baseBranch) {
           vscode.window.showWarningMessage(
             'No hay una rama base registrada para este proyecto. Ejecuta primero "Start review".'
@@ -109,9 +115,26 @@ function activate(context) {
           return;
         }
 
-        await run(`git merge --abort || true`, cwd);
-        await run(`git switch ${baseBranch}`, cwd);
-        await run(`git branch -D ${current}`, cwd);
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Limpiando revisión',
+            cancellable: false
+          },
+          async (progress) => {
+            progress.report({ increment: 0, message: 'Descartando merge...' });
+            await run(`git merge --abort || true`, cwd);
+
+            progress.report({ increment: 40, message: `Volviendo a ${baseBranch}...` });
+            await run(`git switch ${baseBranch}`, cwd);
+
+            progress.report({ increment: 40, message: `Eliminando ${current}...` });
+            await run(`git branch -D ${current}`, cwd);
+
+            progress.report({ increment: 20, message: 'Listo' });
+          }
+        );
+
         vscode.window.showInformationMessage(`🧹 ${current} eliminada, de vuelta en ${baseBranch}.`);
       } catch (e) {
         vscode.window.showErrorMessage(`Error: ${e}`);
